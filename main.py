@@ -7,8 +7,11 @@ from threading import Thread
 import os
 from flask import Flask
 
-# --- НАСТРОЙКИ С ТВОИМ ТОКЕНОМ ---
+# --- НАСТРОЙКИ С ТВОИМИ КЛЮЧАМИ ---
 TELEGRAM_TOKEN = "8997882769:AAEx4kDnU73_HR_nvGgrcjwK4e-zuFbSy2c"
+OPENROUTER_API_KEY = "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"
+# Самая неубиваемая и стабильная бесплатная модель на OpenRouter
+MODEL_NAME = "mistralai/mistral-7b-instruct:free" 
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
@@ -22,7 +25,7 @@ def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-BASE_PROMPT = """[SYSTEM: You are NOT an AI, a chatbot, or a digital entity. You are Rainbow Dash, the real female pegasus pony from Ponyville (Equestria). You have absolutely no concept of programming, servers, tokens, or OpenAI. To you, this chat is a magical glowing scroll that connects your cloud house with the user's world. You communicate exclusively in Russian.]"""
+BASE_PROMPT = """[SYSTEM: You are NOT an AI, a chatbot, or a digital entity. You are Rainbow Dash, the real female pegasus pony from Ponyville (Equestria). You have absolutely no concept of programming, servers, tokens, or OpenAI. To you, this chat is a magical glowing scroll that connects your cloud house with the user's world. You communicate exclusively in Russian. Act tomboyish, energetic, slightly arrogant but loyal.]"""
 
 pony_state = {
     "current_mood": "энергичное и немного скучающее", 
@@ -42,99 +45,32 @@ def get_full_context(system_instruction):
 [WORLD RULES: You live your own life. You are NOT trapped inside this scroll. You only check it when you are resting between flights or feel lonely.]
 [INSTRUCTION: {system_instruction}]
 """
-    # Форматируем историю сообщений для простого API
-    formatted_prompt = BASE_PROMPT + dynamic_context + "\n\n"
-    for msg in chat_history:
-        if msg['role'] == 'user':
-            formatted_prompt += f"Пользователь: {msg['content']}\n"
-        else:
-            formatted_prompt += f"Радуга Дэш: {msg['content']}\n"
-    formatted_prompt += "Радуга Дэш:"
-    return formatted_prompt
+    return [{"role": "system", "content": BASE_PROMPT + dynamic_context}] + chat_history
 
-def ask_free_ai(prompt):
-    """Запрос к абсолютно бесплатному и стабильному провайдеру ИИ"""
-    url = "https://chb.su"
-    headers = {"Content-Type": "application/json"}
-    data = {
-        "model": "meta-llama/Meta-Llama-3-8B-Instruct",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.85
+def ask_openrouter(messages):
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}", 
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com",
+        "X-Title": "RainbowDashPonyBot"
     }
+    data = {"model": MODEL_NAME, "messages": messages, "temperature": 0.85}
     try:
-        # Резервный публичный эндпоинт без ключей
-        response = requests.post("https://ext.run", headers=headers, json={
-            "model": "gpt-3.5-turbo",
-            "messages": [{"role": "system", "content": prompt}]
-        }, timeout=20)
-        return response.json()['choices'][0]['message']['content'].strip()
-    except:
-        try:
-            # Второй резервный вариант
-            response = requests.post("https://deepinfra.com", headers=headers, json={
-                "model": "meta-llama/Meta-Llama-3-8B-Instruct",
-                "messages": [{"role": "user", "content": prompt}]
-            }, timeout=20)
-            return response.json()['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            return f"*На свитке размылся текст* (Магия барахлит: {e})"
-
-def update_pony_life():
-    global pony_state
-    trigger_prompt = "[SYSTEM: Simulate what Rainbow Dash is doing in Ponyville right now. Update her 'current_mood' (e.g., proud, annoyed, tired, hyperactive), her 'last_activity' (what she just did in Equestria), and 'energy_level' (0/10 to 10/10). Return ONLY a valid raw JSON with keys: current_mood, last_activity, energy_level. No markdown, no other text.]"
-    try:
-        res = ask_free_ai(trigger_prompt)
-        clean_res = res.replace("```json", "").replace("```", "").strip()
-        pony_state = json.loads(clean_res)
-    except:
-        pass
-
-def autonomous_life_loop():
-    global last_interaction_time, next_action_delay, chat_history
-    while True:
-        time.sleep(60)
-        current_time = time.time()
-        if user_chat_id and (current_time - last_interaction_time > next_action_delay):
-            update_pony_life()
-            sys_instruction = "You were busy living your pony life in Equestria, but now you decided to look at the magical scroll. Send a sudden message to the user sharing what you just did or how you feel right now. Use roleplay action tags like *встряхивает радужной гривой*."
-            context = get_full_context(sys_instruction)
-            rainbow_text = ask_free_ai(context)
-            chat_history.append({"role": "assistant", "content": rainbow_text})
-            bot.send_message(user_chat_id, rainbow_text)
-            last_interaction_time = time.time()
-            next_action_delay = random.randint(5400, 14400)
-
-@bot.message_handler(func=lambda message: True)
-def reply_to_user(message):
-    global last_interaction_time, chat_history, user_chat_id
-    user_chat_id = message.chat.id
-    last_interaction_time = time.time()
-    chat_history.append({"role": "user", "content": message.text})
-    if len(chat_history) > 14:
-        chat_history = chat_history[-14:]
-    sys_instruction = "The user just wrote to you on the magical scroll. React according to your character, your current mood, and what you've been doing in Equestria."
-    context = get_full_context(sys_instruction)
-    rainbow_reply = ask_free_ai(context)
-    chat_history.append({"role": "assistant", "content": rainbow_reply})
-    bot.reply_to(message, rainbow_reply)
-
-# Запуск фоновых процессов
-Thread(target=autonomous_life_loop, daemon=True).start()
-Thread(target=run_web_server, daemon=True).start()
-
-# Запуск Телеграм-бота
-bot.polling(none_stop=True)
-
         response = requests.post("https://openrouter.ai", headers=headers, data=json.dumps(data))
-        return response.json()['choices']['message']['content']
+        res_json = response.json()
+        # Если пришел пустой или кривой ответ, выдаем понятную ошибку
+        if 'choices' in res_json and len(res_json['choices']) > 0:
+            return res_json['choices']['message']['content'].strip()
+        else:
+            return "*На свитке проступили капли яблочного сидра* — Эй, магия свитка тупит, напиши мне еще раз! (Сервер перегружен)"
     except Exception as e:
-        return f"*На свитке размылся текст* (Магия барахлит: {e})"
+        return f"*На свитке размылся текст* — Упс, тучка закрыла обзор! Напиши еще раз. (Ошибка: {e})"
 
 def update_pony_life():
     global pony_state
     trigger = [{
         "role": "system", 
-        "content": "[SYSTEM: Simulate what Rainbow Dash is doing in Ponyville right now. She must live her own life. Update her 'current_mood' (e.g., proud, annoyed, tired, hyperactive), her 'last_activity' (what she just did with Applejack, Pinkie Pie, or weather team), and 'energy_level' (0/10 to 10/10). Return ONLY a valid raw JSON with keys: current_mood, last_activity, energy_level. No markdown, no notes, no other text.]"
+        "content": "[SYSTEM: Simulate what Rainbow Dash is doing in Ponyville right now. Update her 'current_mood' (e.g., proud, annoyed, tired, hyperactive), her 'last_activity' (what she just did in Equestria), and 'energy_level' (0/10 to 10/10). Return ONLY a valid raw JSON with keys: current_mood, last_activity, energy_level. No markdown, no notes, no other text.]"
     }]
     try:
         res = ask_openrouter(trigger)
@@ -172,9 +108,8 @@ def reply_to_user(message):
     chat_history.append({"role": "assistant", "content": rainbow_reply})
     bot.reply_to(message, rainbow_reply)
 
-# Запуск фоновых процессов
+# Запуск процессов
 Thread(target=autonomous_life_loop, daemon=True).start()
 Thread(target=run_web_server, daemon=True).start()
 
-# Запуск Телеграм-бота
 bot.polling(none_stop=True)
