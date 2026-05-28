@@ -10,7 +10,7 @@ from flask import Flask
 # --- НАСТРОЙКИ С ТВОИМИ КЛЮЧАМИ ---
 TELEGRAM_TOKEN = "8997882769:AAEx4kDnU73_HR_nvGgrcjwK4e-zuFbSy2c"
 OPENROUTER_API_KEY = "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"
-MODEL_NAME = "google/gemma-2-9b-it:free" 
+MODEL_NAME = "meta-llama/llama-3-8b-instruct:free"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
